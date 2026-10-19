@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      background: transparent; font-family: 'Segoe UI', sans-serif;
+    }
+    body { padding: 8px; } /* room for the shadow so it is not clipped by the window edge */
+    .card {
+      padding: 14px 18px;
+      border-radius: 16px;
+      background:
+        radial-gradient(120% 80% at 0% 0%, rgba(99, 102, 241, 0.22), transparent 55%),
+        linear-gradient(155deg, #2b2e45 0%, #1c1e2d 55%, #14151f 100%);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: #f2f3f7;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+      -webkit-app-region: drag; /* drag the card by its body */
+      user-select: none;
+    }
+    .head { display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 15px; }
+    button {
+      -webkit-app-region: no-drag;
+      border: 0; background: transparent; color: #aab;
+      font-size: 16px; cursor: pointer;
+    }
+    button:hover { color: #fff; }
+    .period { margin-top: 12px; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+    .row .name { color: #e6e8f2; }
+    .row .cost { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .row .cost small { font-weight: 400; color: #b9bfd3; }
+    .bar { height: 8px; margin-top: 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+    .fill { height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, #22c55e, #86efac); transition: width 0.4s; }
+    .fill.warn { background: linear-gradient(90deg, #f59e0b, #fde68a); }
+    .fill.high { background: linear-gradient(90deg, #ef4444, #fca5a5); }
+    .detail { margin-top: 4px; font-size: 11.5px; color: #c3c8da; font-variant-numeric: tabular-nums; }
+    .sessions { margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+    .sessions h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: #e6e8f2; }
+    .sess { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #64748b; }
+    .dot.working { background: #60a5fa; animation: pulse 1.2s ease-in-out infinite; }
+    .dot.idle { background: #4ade80; }
+    .dot.attention { background: #fbbf24; animation: pulse 0.9s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+    .sess .sname { flex: 1; color: #e6e8f2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sess .sstat { color: #c3c8da; }
+    .sess .sage { width: 34px; text-align: right; color: #a9afc6; font-variant-numeric: tabular-nums; }
+    .none { font-size: 11.5px; color: #a9afc6; }
+    .foot { margin-top: 12px; font-size: 11px; color: #a9afc6; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <h1>Claude Code</h1>
+      <button onclick="card.close()">✕</button>
+    </div>
+    <div id="periods"></div>
+    <div class="sessions">
+      <h2 id="sess-title">Sesi Claude Code</h2>
+      <div id="sess-list"></div>
+    </div>
+    <div class="foot" id="foot">Memuat…</div>
+  </div>
+  <script>
+    const fmt = (n) =>
+      n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+    const usd = (n) => '$' + n.toFixed(n >= 100 ? 0 : 2);
+
+    const until = (ms) => {
+      const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+      const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+      return d ? `${d}h ${h}j` : h ? `${h}j ${m % 60}m` : `${m}m`;
+    };
+
+    const PERIODS = [
+      ['last5h', '5 jam terakhir'],
+      ['today', 'Hari ini'],
+      ['last7d', '7 hari'],
+    ];
+
+    async function refresh() {
+      const u = await card.getUsage();
+      let unpriced = 0;
+
+      document.getElementById('periods').innerHTML = PERIODS.map(([key, label]) => {
+        const t = u[key];
+        const budget = u.budget[key];
+        const real = u.rateLimits && u.rateLimits[key]; // real limit from /usage data, if available
+        const pct = real ? real.pct : budget > 0 ? (t.cost / budget) * 100 : 0;
+        const cls = pct >= 90 ? 'high' : pct >= 70 ? 'warn' : '';
+        unpriced += t.unpriced;
+        const right = real
+          ? `${Math.round(pct)}% <small>· reset ${until(real.resetsAt)} · ~${usd(t.cost)}</small>`
+          : `${usd(t.cost)} <small>/ ${usd(budget)} · ${Math.round(pct)}%</small>`;
+        return `
+          <div class="period">
+            <div class="row">
+              <span class="name">${label}</span>
+              <span class="cost">${right}</span>
+            </div>
+            <div class="bar"><div class="fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
+            <div class="detail">${t.requests} req · in ${fmt(t.input)} · out ${fmt(t.output)} · cache ${fmt(t.cacheRead)}r/${fmt(t.cacheWrite)}w</div>
+          </div>`;
+      }).join('');
+
+      const rl = u.rateLimits;
+      const live = rl && (rl.last5h || rl.last7d);
+      const age = live ? Math.round((Date.now() - rl.savedAt) / 60000) : 0;
+      document.getElementById('foot').textContent =
+        (live
+          ? `Persen = limit asli (/usage), data ${age}m lalu. `
+          : 'Belum ada data limit asli; pakai budget config.json. ') +
+        'Biaya = estimasi harga API. ' +
+        (unpriced ? `${unpriced} request model tak dikenal dihitung tarif Sonnet. ` : '') +
+        'Update ' + new Date(u.updatedAt).toLocaleTimeString();
+    }
+
+    const fit = () => card.fit(document.querySelector('.card').offsetHeight + 16);
+
+    const STATUS_LABEL = { working: 'Bekerja', idle: 'Menunggu Anda', attention: 'Butuh izin' };
+    const MAX_SESSIONS = 6;
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const ago = (ms) => {
+      const m = Math.floor((Date.now() - ms) / 60000);
+      return m < 1 ? '<1m' : m < 60 ? m + 'm' : Math.floor(m / 60) + 'j';
+    };
+
+    async function refreshSessions() {
+      const list = await card.getSessions();
+      document.getElementById('sess-title').textContent = `Sesi Claude Code (${list.length})`;
+      const shown = list.slice(0, MAX_SESSIONS);
+      document.getElementById('sess-list').innerHTML = shown.length
+        ? shown.map((s) => `
+            <div class="sess">
+              <span class="dot ${s.status}"></span>
+              <span class="sname">${esc(s.name)}</span>
+              <span class="sstat">${STATUS_LABEL[s.status] || s.status}</span>
+              <span class="sage">${ago(s.since)}</span>
+            </div>`).join('') +
+          (list.length > MAX_SESSIONS ? `<div class="none">+${list.length - MAX_SESSIONS} sesi lagi</div>` : '')
+        : '<div class="none">Tidak ada sesi terdeteksi (sesi baru/di-restart akan muncul)</div>';
+      fit();
+    }
+
+    refresh().then(fit);
+    refreshSessions();
+    setInterval(() => refresh().then(fit), 10000);
+    setInterval(refreshSessions, 2000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "usage-monitor",
+  "version": "1.0.0",
+  "description": "Floating always-on-top card showing Claude Code usage limits and live session status (Windows)",
+  "main": "main.js",
+  "bin": {
+    "monitor": "bin/monitor.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "setup": "node bin/monitor.js install"
+  },
+  "os": ["win32"],
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
